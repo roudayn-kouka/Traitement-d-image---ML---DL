@@ -1,0 +1,54 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: plant-disease-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    container_name: plant-disease-server
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      PORT: 5000
+      CLIENT_URL: http://localhost:5173
+      MONGODB_URI: mongodb://mongo:27017/plant-disease-playground
+      PYTHON_EXECUTABLE: python3
+      DATASET_ROOT: ../data/dataset_reduced
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data:/app/data:ro
+      - server_cache:/app/server/cache
+      - server_uploads:/app/server/uploads
+
+  client:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+      args:
+        VITE_API_URL: http://localhost:5000/api
+    container_name: plant-disease-client
+    restart: unless-stopped
+    depends_on:
+      - server
+    ports:
+      - "5173:80"
+
+volumes:
+  mongo_data:
+  server_cache:
+  server_uploads:
