@@ -46,19 +46,91 @@ function MetricCard({ label, value }) {
   );
 }
 
+function HistoryChart({ title, history }) {
+  const values = history || [];
+  if (!values.length) {
+    return null;
+  }
+
+  const width = 320;
+  const height = 150;
+  const padding = 24;
+  const maxValue = Math.max(...values, 1);
+  const minValue = Math.min(...values, 0);
+  const range = Math.max(maxValue - minValue, 0.001);
+  const points = values
+    .map((value, index) => {
+      const x = padding + (index * (width - padding * 2)) / Math.max(values.length - 1, 1);
+      const y = height - padding - ((value - minValue) / range) * (height - padding * 2);
+      return `${x},${y}`;
+    })
+    .join(" ");
+
+  return (
+    <div className="history-chart">
+      <div className="chart-heading">
+        <span>{title}</span>
+        <strong>{values.at(-1)?.toFixed(4)}</strong>
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={title}>
+        <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} className="axis-line" />
+        <line x1={padding} y1={padding} x2={padding} y2={height - padding} className="axis-line" />
+        <polyline fill="none" points={points} className="history-line" />
+        {values.map((value, index) => {
+          const x = padding + (index * (width - padding * 2)) / Math.max(values.length - 1, 1);
+          const y = height - padding - ((value - minValue) / range) * (height - padding * 2);
+          return <circle key={`${title}-${index}`} cx={x} cy={y} r="3" className="history-point" />;
+        })}
+      </svg>
+    </div>
+  );
+}
+
 function HistogramBlock({ title, channels }) {
+  const width = 320;
+  const height = 180;
+  const padding = 28;
+  const palette = {
+    r: "#c65d2c",
+    g: "#5a8f29",
+    b: "#2d6fa3",
+    h: "#b5561e",
+    s: "#2f7f6d",
+    v: "#5a5fcf",
+  };
+
   return (
     <div className="panel subtle-panel">
       <h3>{title}</h3>
       <div className="histogram-groups">
         {Object.entries(channels || {}).map(([channel, values]) => (
           <div key={channel} className="histogram-group">
-            <span>{channel}</span>
-            <div className="histogram-bars">
-              {values.map((value, index) => (
-                <i key={`${channel}-${index}`} style={{ height: `${Math.max(value * 100, 4)}%` }} />
-              ))}
+            <div className="chart-heading">
+              <span>{channel.toUpperCase()}</span>
+              <strong>{values.length} bins</strong>
             </div>
+            <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${title} ${channel}`}>
+              <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} className="axis-line" />
+              <line x1={padding} y1={padding} x2={padding} y2={height - padding} className="axis-line" />
+              {values.map((value, index) => {
+                const barWidth = (width - padding * 2) / values.length;
+                const normalizedHeight = Math.max(2, value * (height - padding * 2));
+                const x = padding + index * barWidth + 1;
+                const y = height - padding - normalizedHeight;
+                return (
+                  <rect
+                    key={`${channel}-${index}`}
+                    x={x}
+                    y={y}
+                    width={Math.max(barWidth - 2, 1)}
+                    height={normalizedHeight}
+                    rx="1"
+                    fill={palette[channel.toLowerCase()] || "#456b55"}
+                    opacity="0.85"
+                  />
+                );
+              })}
+            </svg>
           </div>
         ))}
       </div>
@@ -487,13 +559,14 @@ export default function App() {
             <div className="report-stack">
               <div className="report-section">
                 <h3>Dataset et coherence du split</h3>
-                <div className="metric-strip">
-                  <MetricCard label="Images dataset" value={trainingReport.dataset?.sampleCount || 0} />
-                  <MetricCard label="Features / image" value={trainingReport.dataset?.featureCount || 0} />
-                  <MetricCard
-                    label="Train / Test"
-                    value={`${Math.round((trainingReport.dataset?.trainTestSplit?.trainRatio || 0) * 100)}/${Math.round((trainingReport.dataset?.trainTestSplit?.testRatio || 0) * 100)}`}
-                  />
+                  <div className="metric-strip">
+                    <MetricCard label="Images dataset" value={trainingReport.dataset?.sampleCount || 0} />
+                    <MetricCard label="Classes" value={trainingReport.dataset?.classCount || 0} />
+                    <MetricCard label="Features / image" value={trainingReport.dataset?.featureCount || 0} />
+                    <MetricCard
+                      label="Train / Test"
+                      value={`${Math.round((trainingReport.dataset?.trainTestSplit?.trainRatio || 0) * 100)}/${Math.round((trainingReport.dataset?.trainTestSplit?.testRatio || 0) * 100)}`}
+                    />
                 </div>
                 <p className="meta">{trainingReport.message}</p>
               </div>
@@ -520,24 +593,41 @@ export default function App() {
                     <p>Ajoutez un dataset classe par dossiers sous `data/dataset` avec au moins deux classes.</p>
                   </div>
                 )}
-              </div>
+                </div>
 
-              <div className="report-section">
-                <h3>Extension Deep Learning</h3>
-                {trainingReport.deepLearning?.available ? (
-                  <div className="panel subtle-panel">
-                    <div className="metric-strip">
-                      <MetricCard label="Accuracy" value={trainingReport.deepLearning.metrics.accuracy} />
-                      <MetricCard label="Precision" value={trainingReport.deepLearning.metrics.precision} />
-                      <MetricCard label="Recall" value={trainingReport.deepLearning.metrics.recall} />
+                <div className="report-section">
+                  <h3>Extension Deep Learning</h3>
+                  {trainingReport.deepLearning?.available ? (
+                    <div className="model-grid">
+                      {trainingReport.deepLearning.models?.map((model) => (
+                        <div key={model.modelName} className="panel subtle-panel">
+                          <h3>{model.modelName}</h3>
+                          <div className="metric-strip">
+                            <MetricCard label="Accuracy" value={model.metrics.accuracy} />
+                            <MetricCard label="Precision" value={model.metrics.precision} />
+                            <MetricCard label="Recall" value={model.metrics.recall} />
+                          </div>
+                          <p className="meta">F1-score: {model.metrics.f1Score}</p>
+                          <p className="meta">
+                            Classes evaluees: {model.classCount}. Cible accuracy: {trainingReport.deepLearning.targetAccuracy}.
+                            Resultat: {model.meetsTarget ? "atteinte" : "non atteinte"}.
+                          </p>
+                          <div className="dual-grid history-grid">
+                            <HistoryChart title="Train accuracy" history={model.history?.accuracy} />
+                            <HistoryChart title="Validation accuracy" history={model.history?.val_accuracy} />
+                            <HistoryChart title="Train loss" history={model.history?.loss} />
+                            <HistoryChart title="Validation loss" history={model.history?.val_loss} />
+                          </div>
+                          <ul className="notes compact-notes">
+                            {(model.notes || []).map((line) => (
+                              <li key={line}>{line}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
                     </div>
-                    <p className="meta">F1-score: {trainingReport.deepLearning.metrics.f1Score}</p>
-                    <p className="meta">
-                      CNN from scratch execute avec historique disponible pour comparer l'apprentissage.
-                    </p>
-                  </div>
-                ) : null}
-              </div>
+                  ) : null}
+                </div>
 
               <div className="report-section">
                 <h3>Interpretation des resultats</h3>

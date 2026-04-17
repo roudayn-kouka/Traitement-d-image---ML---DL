@@ -14,7 +14,9 @@ from plant_disease_app.config import TEST_SIZE  # noqa: E402
 from plant_disease_app.image_pipeline import dataset_to_dataframe, resolve_dataset_split_root  # noqa: E402
 from plant_disease_app.ml_pipeline import train_classical_models  # noqa: E402
 
-REPORT_CACHE_VERSION = "v2"
+REPORT_CACHE_VERSION = "v5"
+MINIMUM_MULTICLASS_COUNT = 3
+TARGET_ACCURACY = 0.7
 
 
 def dataset_summary(feature_df):
@@ -24,6 +26,7 @@ def dataset_summary(feature_df):
     return {
         "sampleCount": int(len(feature_df)),
         "featureCount": int(len(feature_df.columns) - 2) if not feature_df.empty else 0,
+        "classCount": int(len(label_counts)),
         "labels": {str(key): int(value) for key, value in label_counts.items()},
         "trainTestSplit": {
             "trainRatio": round(float(1 - TEST_SIZE), 2),
@@ -114,32 +117,51 @@ def serialize_classical_results(results):
 
 def build_deep_learning_section(feature_df):
     try:
-        from plant_disease_app.dl_pipeline import train_deep_learning_model
+        from plant_disease_app.dl_pipeline import train_deep_learning_models
     except Exception as exc:
         return {
             "available": False,
             "message": f"Deep Learning unavailable in this environment: {exc}",
+            "targetAccuracy": TARGET_ACCURACY,
+            "models": [],
         }
 
     try:
-        deep_result = train_deep_learning_model(feature_df, epochs=3, batch_size=8)
+        deep_results = train_deep_learning_models(
+            feature_df,
+            epochs_scratch=10,
+            epochs_pretrained=8,
+            batch_size=16,
+            target_accuracy=TARGET_ACCURACY,
+        )
     except Exception as exc:
         return {
             "available": False,
             "message": str(exc),
+            "targetAccuracy": TARGET_ACCURACY,
+            "models": [],
         }
 
     return {
         "available": True,
-        "modelName": "CNN",
-        "metrics": {
-            "accuracy": round(float(deep_result.metrics["accuracy"]), 4),
-            "precision": round(float(deep_result.metrics["precision"]), 4),
-            "recall": round(float(deep_result.metrics["recall"]), 4),
-            "f1Score": round(float(deep_result.metrics["f1_score"]), 4),
-        },
-        "history": {key: [round(float(v), 4) for v in values] for key, values in deep_result.history.items()},
-        "predictionExamples": deep_result.predictions_df.head(5).to_dict(orient="records"),
+        "targetAccuracy": TARGET_ACCURACY,
+        "models": [
+            {
+                "modelName": deep_result.model_name,
+                "classCount": deep_result.class_count,
+                "meetsTarget": deep_result.meets_target,
+                "metrics": {
+                    "accuracy": round(float(deep_result.metrics["accuracy"]), 4),
+                    "precision": round(float(deep_result.metrics["precision"]), 4),
+                    "recall": round(float(deep_result.metrics["recall"]), 4),
+                    "f1Score": round(float(deep_result.metrics["f1_score"]), 4),
+                },
+                "history": {key: [round(float(v), 4) for v in values] for key, values in deep_result.history.items()},
+                "predictionExamples": deep_result.predictions_df.head(5).to_dict(orient="records"),
+                "notes": deep_result.notes,
+            }
+            for deep_result in deep_results
+        ],
     }
 
 
@@ -152,11 +174,18 @@ def interpret_results(classical_results, deep_learning_result):
             f"Best classical model: {best_classical['modelName']} with accuracy {best_classical['metrics']['accuracy']}."
         )
 
-    if deep_learning_result.get("available") and classical_results:
+    deep_models = deep_learning_result.get("models", [])
+    if deep_learning_result.get("available") and deep_models and classical_results:
         best_classical = max(classical_results, key=lambda item: item["metrics"]["accuracy"])
-        deep_accuracy = deep_learning_result["metrics"]["accuracy"]
+        best_deep = max(deep_models, key=lambda item: item["metrics"]["accuracy"])
+        deep_accuracy = best_deep["metrics"]["accuracy"]
         delta = round(deep_accuracy - best_classical["metrics"]["accuracy"], 4)
-        comparisons.append(f"CNN accuracy delta versus best classical model: {delta}.")
+        comparisons.append(f"Best deep model: {best_deep['modelName']} with accuracy {deep_accuracy}.")
+        comparisons.append(f"Best deep model accuracy delta versus best classical model: {delta}.")
+        if best_deep["meetsTarget"]:
+            comparisons.append(f"Deep Learning target reached: accuracy is at least {TARGET_ACCURACY}.")
+        else:
+            comparisons.append(f"Deep Learning target not reached yet: best accuracy is below {TARGET_ACCURACY}.")
     elif not deep_learning_result.get("available"):
         comparisons.append(deep_learning_result["message"])
 
@@ -200,14 +229,16 @@ def build_report(dataset_root: Path) -> dict:
         save_cached_report(cache_key, report)
         return report
 
-    if feature_df["label"].nunique() < 2:
+    if feature_df["label"].nunique() < MINIMUM_MULTICLASS_COUNT:
         report = {
             "dataset": dataset_summary(feature_df),
-            "message": "At least two labeled classes are required for ML and CNN training.",
+            "message": f"At least {MINIMUM_MULTICLASS_COUNT} labeled classes are required for the ML and CNN comparison.",
             "classicalModels": [],
             "deepLearning": {
                 "available": False,
-                "message": "Not enough classes for CNN training.",
+                "message": f"Not enough classes for CNN training. Found {feature_df['label'].nunique()} classes.",
+                "targetAccuracy": TARGET_ACCURACY,
+                "models": [],
             },
             "interpretation": [],
         }
@@ -222,7 +253,7 @@ def build_report(dataset_root: Path) -> dict:
 
     report = {
         "dataset": dataset_summary(feature_df),
-        "message": "Training and evaluation completed.",
+        "message": f"Training and evaluation completed across {feature_df['label'].nunique()} classes.",
         "classicalModels": classical_results,
         "deepLearning": deep_learning_result,
         "interpretation": interpret_results(classical_results, deep_learning_result),

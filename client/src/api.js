@@ -6,9 +6,19 @@ async function parseResponse(response) {
     return null;
   }
 
-  const data = await response.json();
+  const rawBody = await response.text();
+  let data = null;
+
+  if (rawBody) {
+    try {
+      data = JSON.parse(rawBody);
+    } catch {
+      data = { message: rawBody };
+    }
+  }
+
   if (!response.ok) {
-    throw new Error(data.message || "Request failed.");
+    throw new Error(data?.message || `Request failed with status ${response.status}.`);
   }
 
   return data;

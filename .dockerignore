@@ -1,5 +1,13 @@
+**
+!.dockerignore
+!Dockerfile.server
+!Dockerfile.client
+!client/**
+!server/**
+!plant_disease_app/**
+!data/**
+
 .git
-node_modules
 **/node_modules
 venv
 __pycache__
@@ -11,3 +19,6 @@ server/tmp
 *.pyo
 .env
 server/.env
+*.log
+client/*.log
+server/*.log

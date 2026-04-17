@@ -38,8 +38,18 @@ async function startServer() {
 
   setPersistenceMode(persistenceMode);
 
-  app.listen(env.port, () => {
+  const server = app.listen(env.port, () => {
     console.log(`Server listening on http://localhost:${env.port} (${persistenceMode})`);
+  });
+
+  server.on("error", (error) => {
+    if (error.code === "EADDRINUSE") {
+      console.error(`Port ${env.port} is already in use. Stop the existing server or change PORT.`);
+      process.exit(1);
+    }
+
+    console.error("Server failed to start:", error);
+    process.exit(1);
   });
 }
 

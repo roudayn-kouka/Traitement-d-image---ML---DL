@@ -49,6 +49,14 @@ Le frontend attend l'API sur `http://localhost:5000` et Vite sert l'interface su
 docker compose up --build -d
 ```
 
+Sous Windows, si le depot est dans OneDrive, Docker BuildKit peut echouer sur les fichiers `ReparsePoint`. Dans ce cas, utilisez le script PowerShell suivant depuis la racine du projet :
+
+```powershell
+.\docker-build.ps1
+```
+
+Le script cree une copie de travail normale dans `.docker-context/`, puis lance `docker compose up --build -d` depuis cette copie pour eviter l'erreur `invalid file request`.
+
 Services exposes :
 
 - frontend: `http://localhost:5173`

@@ -16,7 +16,7 @@ services:
   server:
     build:
       context: .
-      dockerfile: server/Dockerfile
+      dockerfile: Dockerfile.server
     container_name: plant-disease-server
     restart: unless-stopped
     depends_on:
@@ -38,7 +38,7 @@ services:
   client:
     build:
       context: .
-      dockerfile: client/Dockerfile
+      dockerfile: Dockerfile.client
       args:
         VITE_API_URL: http://localhost:5000/api
     container_name: plant-disease-client
